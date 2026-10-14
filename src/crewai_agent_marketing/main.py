@@ -68,11 +68,13 @@ def _provider():
     return AutoReviewer() if os.environ.get("AMS_HITL") == "auto" else None  # None → console locally, AMP's on AMP
 
 
-def _peer(name: str) -> tuple[str, str]:
-    url, token = os.environ.get(f"{name}_A2A_URL", ""), os.environ.get(f"{name}_A2A_TOKEN", "")
+def _peer(name: str) -> dict:
+    """{NAME}_A2A_URL / _TOKEN, plus _AGENT when Sale and HR share one AMP deployment (the agent's slug)."""
+    url = os.environ.get(f"{name}_A2A_URL", "")
     if not url:
         raise RuntimeError(f"thiếu {name}_A2A_URL (địa chỉ deployment {name.lower()} trên AMP)")
-    return url, token
+    return {"base_url": url, "token": os.environ.get(f"{name}_A2A_TOKEN", ""),
+            "target_agent": os.environ.get(f"{name}_A2A_AGENT") or None}
 
 
 def _money(v: int) -> str:
@@ -90,7 +92,8 @@ class MeetingFlow(Flow[MeetingState]):
     def _ask(self, peer: str, text: str, payload: dict) -> dict:
         who = {"sale": "Sale", "hr": "HR"}[peer]
         self._say("Marketing", who, text, payload)
-        reply_text, reply = ask(*_peer(peer.upper()), text, payload)
+        peer_cfg = _peer(peer.upper())
+        reply_text, reply = ask(peer_cfg["base_url"], peer_cfg["token"], text, payload, peer_cfg["target_agent"])
         if reply is None:
             raise RuntimeError(f"{peer} trả lời không có JSON: {reply_text[:300]}")
         self._say(who, "Marketing", reply.get("note") or reply.get("hire_plan") or reply_text[:200], reply)

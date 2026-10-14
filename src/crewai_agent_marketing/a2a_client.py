@@ -48,12 +48,17 @@ def _texts(obj) -> list[str]:
     return [t for t in out if t]
 
 
-def ask(base_url: str, token: str, text: str, payload: dict | None = None) -> tuple[str, dict | None]:
+def ask(base_url: str, token: str, text: str, payload: dict | None = None,
+        target_agent: str | None = None) -> tuple[str, dict | None]:
+    """target_agent: on an AMP deployment that serves several A2A agents, the slug of the one to talk to
+    (sent as message metadata, as AMP documents); without it AMP answers with the crew's first agent."""
     body = text + ("\n\n```json\n" + json.dumps(payload, ensure_ascii=False) + "\n```" if payload else "")
     parts = [{"kind": "text", "text": body}] + ([{"kind": "data", "data": payload}] if payload else [])
+    message = {"kind": "message", "role": "user", "messageId": str(uuid.uuid4()), "parts": parts}
+    if target_agent:
+        message["metadata"] = {"target_agent": target_agent}
     req = {"jsonrpc": "2.0", "id": str(uuid.uuid4()), "method": "message/send",
-           "params": {"message": {"kind": "message", "role": "user", "messageId": str(uuid.uuid4()), "parts": parts},
-                      "configuration": {"blocking": True}}}
+           "params": {"message": message, "configuration": {"blocking": True}}}
     with httpx.Client(timeout=TIMEOUT, headers={"Authorization": f"Bearer {token}"}) as c:
         r = c.post(_endpoint(base_url, c), json=req)
     if r.status_code != 200:

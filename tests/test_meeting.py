@@ -17,7 +17,7 @@ def test_campaign_buys_leads_per_channel():
     assert c["target_leads"] == sum(r["leads"] for r in c["channels"]) > 0
 
 
-def fake_peer(url, token, text, payload):
+def fake_peer(url, token, text, payload, target_agent=None):
     """Sale needs 7 people unless capped; HR can staff 6, so the first answer comes back with a question."""
     if "sale" in url:
         reps = payload.get("max_headcount") or 7
