@@ -68,7 +68,21 @@ def test_revisions_are_capped(monkeypatch):
 
 @pytest.mark.parametrize("answer,outcome", [("approved", "approved"), ("revise", "revise"), ("rejected", "rejected"),
                                             ("yêu cầu sửa: giảm ngân sách 20%", "revise"), ("Duyệt", "approved")])
-def test_verdict_llm_maps_buttons_and_free_text(answer, outcome):
-    prompt = (f"Based on the following human feedback, determine which outcome best matches their intent.\n\n"
-              f"Feedback: {answer}\n\nPossible outcomes: approved, rejected, revise\n\nRespond with ONLY one …")
-    assert m.VerdictLLM(model="code/verdict").call([{"role": "user", "content": prompt}]) == '{"outcome": "%s"}' % outcome
+def test_collapse_maps_buttons_and_free_text(answer, outcome):
+    assert m.MeetingFlow()._collapse_to_outcome(answer, m.OUTCOMES, None) == outcome
+
+
+@pytest.mark.parametrize("answer,decision", [("approved", "approved"), ("rejected", "rejected")])
+def test_pause_then_resume_in_a_new_flow_like_amp(monkeypatch, answer, decision):
+    """AMP pauses at review, persists, and resumes later in another process from the stored context (the llm is
+    rebuilt from its serialized config). A custom BaseLLM there broke the resume and left the execution PAUSED."""
+    from crewai.flow.async_feedback.types import HumanFeedbackPending
+
+    def pause(self, context, flow):
+        raise HumanFeedbackPending(context=context)
+
+    monkeypatch.setattr(m.AutoReviewer, "request_feedback", pause)
+    flow = m.MeetingFlow()
+    assert isinstance(flow.kickoff(inputs={}), HumanFeedbackPending)
+    out = m.MeetingFlow.from_pending(flow.state.id).resume(answer)
+    assert out["decision"] == decision and out["rounds"] == 1

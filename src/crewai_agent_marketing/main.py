@@ -10,7 +10,7 @@ Inputs (AMP /kickoff, trigger payload or `crewai run`): product, quarter, budget
 Peers: SALE_A2A_URL / SALE_A2A_TOKEN and HR_A2A_URL / HR_A2A_TOKEN (AMP deployment URLs; their AUTH_TOKEN).
 Approval: `@human_feedback(emit=[approved, rejected, revise])` → on AMP the reviewer gets three buttons (plus an
 optional note) by email or on the dashboard; locally AMS_HITL=auto answers from AMS_HITL_FEEDBACK
-("yêu cầu sửa: giảm ngân sách 20%||duyệt" = one answer per round). VerdictLLM maps the answer with code.
+("yêu cầu sửa: giảm ngân sách 20%||duyệt" = one answer per round). verdict() maps the answer with code.
 """
 from __future__ import annotations
 
@@ -26,7 +26,6 @@ from pydantic import BaseModel
 
 from crewai_agent_marketing.a2a_client import ask
 from crewai_agent_marketing.crews.strategy_crew.strategy_crew import FinalizeCrew, ProposeCrew
-from crewai_agent_marketing.fake_llm import ScriptedLLM
 
 MAX_REVISIONS = 2
 
@@ -68,16 +67,11 @@ class AutoReviewer:
 
 
 OUTCOMES = ["approved", "rejected", "revise"]
-
-
-class VerdictLLM(ScriptedLLM):
-    """What @human_feedback(emit=…) calls to map the reviewer's answer to an outcome — answered by code (verdict()),
-    so the decision never depends on a model. AMP's review buttons send the outcome name itself."""
-
-    def respond(self, text: str) -> str:
-        m = re.search(r"Feedback:\s*(.*?)\s*Possible outcomes:", text, re.S)
-        return json.dumps({"outcome": verdict(m.group(1) if m else text)})
-
+# @human_feedback(emit=…) needs an llm, and on AMP the resume runs in another process that rebuilds it from its
+# serialized config with LLM(model=…) — a custom BaseLLM comes back as an unknown provider and the resume dies
+# (execution stays PAUSED). So: a placeholder that LLM() can build without a key or network, never called, because
+# MeetingFlow._collapse_to_outcome classifies the answer with verdict().
+VERDICT_LLM = "ollama/verdict-by-code"
 
 def _provider():
     return AutoReviewer() if os.environ.get("AMS_HITL") == "auto" else None  # None → console locally, AMP's on AMP
@@ -173,13 +167,17 @@ class MeetingFlow(Flow[MeetingState]):
     @listen(finalize)
     @human_feedback(message="Duyệt kế hoạch chiến dịch? Chọn approved (duyệt), rejected (từ chối) hoặc revise "
                             "(yêu cầu sửa) — có thể ghi góp ý, ví dụ: 'yêu cầu sửa: giảm ngân sách 20%'.",
-                    emit=OUTCOMES, llm=VerdictLLM(model="code/verdict"), default_outcome="rejected",
+                    emit=OUTCOMES, llm=VERDICT_LLM, default_outcome="rejected",
                     provider=_provider())
     def review(self):
         p = self.state.plan
         return (f"{p['headline']}\nChi phí: marketing {_money(p['marketing_budget'])} + nhân sự "
                 f"{_money(p['staffing_cost'])} = {_money(p['total_cost'])} · doanh số/chi phí {p['revenue_per_cost']}x\n"
                 f"Đội bán hàng: {p['sales_team']} · {p['hiring']}\nRủi ro: {'; '.join(p['risks']) or 'không'}")
+
+    def _collapse_to_outcome(self, feedback: str, outcomes, llm) -> str:
+        """The reviewer's answer → outcome, by code (AMP's buttons send the outcome name itself)."""
+        return verdict(feedback)
 
     def _answer(self) -> str:
         fb = self.last_human_feedback
