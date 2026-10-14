@@ -3,12 +3,14 @@
 
     intake → propose ─► ask_sale ─► ask_hr ─┬─ "ready" ───────────────────────┐
               ▲                             └─ "relay": HR hỏi lại Sale → HR ─┴─► finalize → review (HITL)
-              └──────────── "revise" (tối đa 2 lần) ◄─ decide ─┬─ "approved" / "rejected" ─► finish
+              └── "revise_round" ◄─ check_revise ◄─ "revise" ─┤ review emits approved / rejected / revise
+                                                                 └─ "approved" / "rejected" ─► finish
 
 Inputs (AMP /kickoff, trigger payload or `crewai run`): product, quarter, budget, goal.
 Peers: SALE_A2A_URL / SALE_A2A_TOKEN and HR_A2A_URL / HR_A2A_TOKEN (AMP deployment URLs; their AUTH_TOKEN).
-Approval: `@human_feedback` → on AMP the platform emails the reviewer; locally AMS_HITL=auto answers from
-AMS_HITL_FEEDBACK ("yêu cầu sửa: giảm ngân sách 20%||duyệt" = one answer per round). The answer is read by code.
+Approval: `@human_feedback(emit=[approved, rejected, revise])` → on AMP the reviewer gets three buttons (plus an
+optional note) by email or on the dashboard; locally AMS_HITL=auto answers from AMS_HITL_FEEDBACK
+("yêu cầu sửa: giảm ngân sách 20%||duyệt" = one answer per round). VerdictLLM maps the answer with code.
 """
 from __future__ import annotations
 
@@ -24,6 +26,7 @@ from pydantic import BaseModel
 
 from crewai_agent_marketing.a2a_client import ask
 from crewai_agent_marketing.crews.strategy_crew.strategy_crew import FinalizeCrew, ProposeCrew
+from crewai_agent_marketing.fake_llm import ScriptedLLM
 
 MAX_REVISIONS = 2
 
@@ -47,7 +50,7 @@ class MeetingState(BaseModel):
 
 
 def verdict(answer: str | None) -> str:
-    """Deterministic: 'duyệt…/approve/đồng ý/ok' → approved; 'yêu cầu sửa…/sửa…/revise' → revise; else rejected."""
+    """Deterministic: 'duyệt…/approve(d)/đồng ý/ok' → approved; 'yêu cầu sửa…/sửa…/revise' → revise; else rejected."""
     t = (answer or "").strip().lower()
     if re.match(r"^(duyệt|approve|approved|đồng ý|ok\b)", t):
         return "approved"
@@ -62,6 +65,18 @@ class AutoReviewer:
     def request_feedback(self, context: PendingFeedbackContext, flow: Flow) -> str:
         answers = [a.strip() for a in os.environ.get("AMS_HITL_FEEDBACK", "duyệt").split("||")]
         return answers[min(flow.state.round, len(answers)) - 1]
+
+
+OUTCOMES = ["approved", "rejected", "revise"]
+
+
+class VerdictLLM(ScriptedLLM):
+    """What @human_feedback(emit=…) calls to map the reviewer's answer to an outcome — answered by code (verdict()),
+    so the decision never depends on a model. AMP's review buttons send the outcome name itself."""
+
+    def respond(self, text: str) -> str:
+        m = re.search(r"Feedback:\s*(.*?)\s*Possible outcomes:", text, re.S)
+        return json.dumps({"outcome": verdict(m.group(1) if m else text)})
 
 
 def _provider():
@@ -108,7 +123,7 @@ class MeetingFlow(Flow[MeetingState]):
         self._say("Người dùng", "Marketing", f"Lập kế hoạch chiến dịch {self.state.product} {self.state.quarter}, "
                                              f"ngân sách {_money(int(self.state.budget))}: {self.state.goal}")
 
-    @listen(or_(intake, "revise"))
+    @listen(or_(intake, "revise_round"))
     def propose(self):
         self.state.round += 1
         self.state.relayed = False
@@ -156,29 +171,38 @@ class MeetingFlow(Flow[MeetingState]):
         self._say("Marketing", "Người duyệt", self.state.plan["headline"], self.state.plan)
 
     @listen(finalize)
-    @human_feedback(message="Duyệt kế hoạch chiến dịch? Trả lời 'duyệt', 'từ chối: lý do' hoặc 'yêu cầu sửa: góp ý' "
-                            "(ví dụ: yêu cầu sửa: giảm ngân sách 20%).", provider=_provider())
+    @human_feedback(message="Duyệt kế hoạch chiến dịch? Chọn approved (duyệt), rejected (từ chối) hoặc revise "
+                            "(yêu cầu sửa) — có thể ghi góp ý, ví dụ: 'yêu cầu sửa: giảm ngân sách 20%'.",
+                    emit=OUTCOMES, llm=VerdictLLM(model="code/verdict"), default_outcome="rejected",
+                    provider=_provider())
     def review(self):
         p = self.state.plan
         return (f"{p['headline']}\nChi phí: marketing {_money(p['marketing_budget'])} + nhân sự "
                 f"{_money(p['staffing_cost'])} = {_money(p['total_cost'])} · doanh số/chi phí {p['revenue_per_cost']}x\n"
                 f"Đội bán hàng: {p['sales_team']} · {p['hiring']}\nRủi ro: {'; '.join(p['risks']) or 'không'}")
 
-    @router(review)
-    def decide(self, result):
-        self.state.reviewer_answer = result.feedback
-        self._say("Người duyệt", "Marketing", result.feedback or "(không trả lời)")
-        v = verdict(result.feedback)
-        if v == "revise" and self.state.round > MAX_REVISIONS:
-            self._say("Marketing", "Người duyệt", f"Đã sửa {MAX_REVISIONS} lần, dừng ở đây; cần họp trực tiếp.")
-            return "rejected"
-        if v == "revise":
-            self.state.feedback = result.feedback
-        return v
+    def _answer(self) -> str:
+        fb = self.last_human_feedback
+        text = (fb.feedback if fb else "") or ""
+        self.state.reviewer_answer = text or (fb.outcome if fb else "")
+        self._say("Người duyệt", "Marketing", f"{fb.outcome if fb else '?'}" + (f" · {text}" if text else ""))
+        return text
 
-    @listen(or_("approved", "rejected"))
+    @router("revise")
+    def check_revise(self):
+        """A revision runs another round with the reviewer's note, at most MAX_REVISIONS times."""
+        self.state.feedback = self._answer()
+        if self.state.round > MAX_REVISIONS:
+            self._say("Marketing", "Người duyệt", f"Đã sửa {MAX_REVISIONS} lần, dừng ở đây; cần họp trực tiếp.")
+            return "too_many_revisions"
+        return "revise_round"
+
+    @listen(or_("approved", "rejected", "too_many_revisions"))
     def finish(self):
-        self.state.decision = "approved" if verdict(self.state.reviewer_answer) == "approved" else "rejected"
+        if self.last_human_feedback and self.last_human_feedback.outcome in ("approved", "rejected"):
+            self._answer()
+        outcome = self.last_human_feedback.outcome if self.last_human_feedback else "rejected"
+        self.state.decision = "approved" if outcome == "approved" else "rejected"
         return {"decision": self.state.decision, "rounds": self.state.round, "plan": self.state.plan,
                 "transcript": [{k: m[k] for k in ("round", "from", "to", "text")} for m in self.state.transcript]}
 

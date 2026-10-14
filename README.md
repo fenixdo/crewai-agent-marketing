@@ -10,7 +10,7 @@ intake → propose (campaign_budget) → hỏi Sale (A2A) → hỏi HR (A2A) ─
 
 - Inputs `/kickoff`: `product`, `quarter`, `budget`, `goal` (đều có mặc định).
 - Biến môi trường: `SALE_A2A_URL`, `SALE_A2A_TOKEN`, `SALE_A2A_AGENT`, `HR_A2A_URL`, `HR_A2A_TOKEN`, `HR_A2A_AGENT`. Trên AMP (gói Basic) Sale và HR chạy chung deployment [crewai-agent-team](https://github.com/fenixdo/crewai-agent-team): URL và **token của deployment đó**, `_AGENT` = slug A2A (`truong_phong_kinh_doanh`, `truong_phong_nhan_su`).
-- Người duyệt trả lời: `duyệt` · `từ chối: lý do` · `yêu cầu sửa: góp ý` (ví dụ `yêu cầu sửa: giảm ngân sách 20%`). Câu trả lời được đọc bằng code.
+- Người duyệt chọn **approved / rejected / revise** (nút trên dashboard hoặc email AMP), có thể kèm góp ý, ví dụ `yêu cầu sửa: giảm ngân sách 20%`. Câu trả lời được `VerdictLLM` (code, không phải model) xếp vào một lựa chọn. Không khai báo `emit` thì dashboard AMP gửi "ok" thay cho nội dung đã gõ (đã gặp khi thử).
 - Kết quả có `transcript`: toàn bộ tin nhắn Marketing ↔ Sale ↔ HR ↔ người duyệt.
 - LLM: **FakeLLM** theo kịch bản (`script.py`); đặt `MODEL` để dùng LLM thật.
 

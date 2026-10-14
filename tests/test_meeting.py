@@ -64,3 +64,11 @@ def test_reject(monkeypatch):
 def test_revisions_are_capped(monkeypatch):
     out, _ = meeting(monkeypatch, "yêu cầu sửa: giảm ngân sách 10%")
     assert out["decision"] == "rejected" and out["rounds"] == m.MAX_REVISIONS + 1
+
+
+@pytest.mark.parametrize("answer,outcome", [("approved", "approved"), ("revise", "revise"), ("rejected", "rejected"),
+                                            ("yêu cầu sửa: giảm ngân sách 20%", "revise"), ("Duyệt", "approved")])
+def test_verdict_llm_maps_buttons_and_free_text(answer, outcome):
+    prompt = (f"Based on the following human feedback, determine which outcome best matches their intent.\n\n"
+              f"Feedback: {answer}\n\nPossible outcomes: approved, rejected, revise\n\nRespond with ONLY one …")
+    assert m.VerdictLLM(model="code/verdict").call([{"role": "user", "content": prompt}]) == '{"outcome": "%s"}' % outcome
