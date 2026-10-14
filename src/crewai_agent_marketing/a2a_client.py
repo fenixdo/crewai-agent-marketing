@@ -3,8 +3,9 @@
     ask(base_url, token, text, payload) → (reply_text, reply_json_or_None)
 
 base_url is the peer's root (AMP deployment URL or a local server). Its public agent card
-(/.well-known/agent-card.json) gives the JSON-RPC endpoint; calls carry `Authorization: Bearer <token>`
-(the peer's SimpleTokenAuth, AUTH_TOKEN on its side). The payload travels as a ```json block in the text so any
+(/.well-known/agent-card.json) gives the JSON-RPC endpoint; calls carry `Authorization: Bearer <token>`.
+On AMP the token is the peer DEPLOYMENT's bearer token (Status tab / API `token`); AMP's gateway checks it
+before the agent runs. Locally (scripts/a2a_local.py) it is the peer's AUTH_TOKEN. The payload travels as a ```json block in the text so any
 agent reads it, plus a DataPart for clients that use structured parts.
 """
 from __future__ import annotations
@@ -23,10 +24,17 @@ class A2AError(RuntimeError):
 
 
 def _endpoint(base_url: str, client: httpx.Client) -> str:
-    card = client.get(base_url.rstrip("/") + "/.well-known/agent-card.json")
+    """The JSON-RPC URL from the peer's public agent card. AMP's card advertises its in-cluster address
+    (http://127.0.0.1:80/a2a), so a card pointing at localhost while the base is remote means <base>/a2a."""
+    base = base_url.rstrip("/")
+    card = client.get(base + "/.well-known/agent-card.json")
     if card.status_code != 200:
         raise A2AError(f"không đọc được agent card ({card.status_code}) tại {base_url}")
-    return card.json().get("url") or base_url.rstrip("/") + "/a2a"
+    url = card.json().get("url") or ""
+    host = httpx.URL(url).host if url else ""
+    if not url or (host in ("127.0.0.1", "localhost") and httpx.URL(base).host not in ("127.0.0.1", "localhost")):
+        return base + "/a2a"
+    return url
 
 
 def _texts(obj) -> list[str]:

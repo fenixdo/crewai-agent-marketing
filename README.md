@@ -9,7 +9,7 @@ intake → propose (campaign_budget) → hỏi Sale (A2A) → hỏi HR (A2A) ─
 ```
 
 - Inputs `/kickoff`: `product`, `quarter`, `budget`, `goal` (đều có mặc định).
-- Biến môi trường: `SALE_A2A_URL`, `SALE_A2A_TOKEN`, `HR_A2A_URL`, `HR_A2A_TOKEN` (URL deployment Sale/HR trên AMP và `AUTH_TOKEN` của chúng).
+- Biến môi trường: `SALE_A2A_URL`, `SALE_A2A_TOKEN`, `HR_A2A_URL`, `HR_A2A_TOKEN` = URL deployment Sale/HR trên AMP và **token của deployment** (tab Status). Gateway `/a2a` của AMP kiểm token này, không dùng `AUTH_TOKEN`.
 - Người duyệt trả lời: `duyệt` · `từ chối: lý do` · `yêu cầu sửa: góp ý` (ví dụ `yêu cầu sửa: giảm ngân sách 20%`). Câu trả lời được đọc bằng code.
 - Kết quả có `transcript`: toàn bộ tin nhắn Marketing ↔ Sale ↔ HR ↔ người duyệt.
 - LLM: **FakeLLM** theo kịch bản (`script.py`); đặt `MODEL` để dùng LLM thật.
