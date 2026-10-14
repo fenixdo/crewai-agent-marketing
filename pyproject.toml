@@ -1,0 +1,28 @@
+[project]
+name = "crewai_agent_marketing"
+version = "0.1.0"
+description = "Marketing agent: chủ trì họp kế hoạch chiến dịch quý, gọi Sale và HR qua A2A, người duyệt chốt (CrewAI flow)"
+authors = [{ name = "fenixdo", email = "fenix@torilab.ai" }]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "crewai[a2a]==1.15.27",
+    "pyyaml>=6",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+kickoff = "crewai_agent_marketing.main:kickoff"
+run_crew = "crewai_agent_marketing.main:kickoff"
+plot = "crewai_agent_marketing.main:plot"
+run_with_trigger = "crewai_agent_marketing.main:run_with_trigger"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.crewai]
+type = "flow"
+project_id = "18f0830e-9274-46e5-849a-01ee5dd9f749"

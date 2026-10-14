@@ -1,0 +1,5 @@
+# Kênh marketing: tỷ trọng ngân sách và chi phí cho một lead (giả lập).
+channels:
+  - {name: Facebook Ads, share_pct: 40, cost_per_lead: 150000}
+  - {name: Google Ads, share_pct: 35, cost_per_lead: 200000}
+  - {name: Hội thảo doanh nghiệp, share_pct: 25, cost_per_lead: 400000}

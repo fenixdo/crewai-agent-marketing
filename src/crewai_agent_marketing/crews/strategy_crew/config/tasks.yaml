@@ -1,0 +1,23 @@
+propose_task:
+  description: >
+    ĐỀ XUẤT CHIẾN DỊCH. Dựa trên brief (và góp ý của người duyệt nếu có), đề xuất ngân sách và phân bổ kênh
+    bằng tool campaign_budget.
+
+    ```json
+    {brief}
+    ```
+  expected_output: >
+    JSON: campaign, objective, budget, channels, target_leads, message.
+  agent: marketing_lead
+
+finalize_task:
+  description: >
+    CHỐT KẾ HOẠCH. Tổng hợp đề xuất của Marketing, dự báo của Sale và kế hoạch nhân sự của HR thành kế hoạch trình duyệt.
+
+    ```json
+    {meeting}
+    ```
+  expected_output: >
+    JSON: headline, marketing_budget, staffing_cost, total_cost, revenue, revenue_per_cost, sales_team, hiring,
+    policy_version, risks, next_steps.
+  agent: marketing_lead
